@@ -11,7 +11,8 @@ using namespace bn;
  */
 Ec1 hash_msg(const char *msg) {
   // TODO, swap out. This is a dummy hash function
-
+  // All code in here is duplicate boilerplate to generate a point on the curve
+  // You can delete all of this.
   bn::CurveParam cp = bn::CurveFp254BNb;
   Param::init(cp);
 
@@ -31,11 +32,12 @@ Ec1 hash_msg(const char *msg) {
   return hashed_msg_point;
 }
 
-// !!!!!XXXXXX
-// Normal Key Generation
-// !!!!!!!!!!!!!
-// Also not proper data type, should be larger
-// Not sure if need to create own type or use pre-existing
+
+/*
+ * @param {char* } rand_seed, string representation of 256 bit int
+ * @return {Ec2}  public key point
+ * public_key = g2 ^ secret_key
+ */
 Ec2 gen_key(char *rand_seed) {
 
   bn::CurveParam cp = bn::CurveFp254BNb;
@@ -85,61 +87,6 @@ Ec2 gen_key(char *rand_seed) {
 }
 
 
-/* Function: get_pubkey
- * given private key, calculates point of public key in G2
- * public_key = g2 ^ secret_key
- * @param {char*} secret_key, String version of integer representing private key in Zp (e.g. "32423413242")
- * @returns {Ec2} public_key, Point in G2
- */
-Ec2 get_pubkey(char *rand_seed) {
-  // check that secret_key in Zp
-
-  // initialize curve
-  bn::CurveParam cp = bn::CurveFp254BNb;
-  Param::init(cp);
-
-  // create generator g2
-  // TODO: check that this generator is the correct one to use
-  const Point& pt = selectPoint(cp);
-  const Ec2 g2(
-    Fp2(Fp(pt.g2.aa), Fp(pt.g2.ab)),
-    Fp2(Fp(pt.g2.ba), Fp(pt.g2.bb))
-  );
-
-  // convert secret_key into variable-sized uint
-  const mie::Vuint secret_key(rand_seed);
-
-  // Multiply generator by secret_key value
-  // to calculate public key
-  Ec2 public_key = g2 * secret_key;
-
-  return public_key;
-}
-
-// !!!!!!!!!!!!!!
-
-// Distributed Key Generation
-
-// Simple BLS Sig
-// Again look at data types here
-// int bls_sign(char* msg) {
-//   char* signed_msg;
-
-  // hash message onto curve
-  // exponentiate
-
-//   return signed_msg;
-// }
-
-// Threshold Signatures
-
-
-// Blind Signatures
-
-
-// Signing Function
-
-
 /* Function: aggregate_sigs()
  * Multiply signatures together to create aggregate signature
  * @param {std::vector<Ec1>*} sigs
@@ -156,7 +103,7 @@ Ec1 aggregate_sigs(const std::vector<Ec1>& sigs) {
   return sig_product;
 }
 
-// Verify
+// TODO: requires hash function
 
 bool verify_sig(char* pubkey, char* msg, Ec1 sig) {
   Fp12 e;
@@ -193,3 +140,13 @@ int main() {
     gen_key(seed);
     return 0;
 }
+
+// TODO
+
+// -Distributed Key Generation
+// -Simple BLS Sig
+// -Again look at data types here
+// -Threshold Signatures
+// -Blind Signatures
+// - Aggregate signatures
+// -Signing Function
