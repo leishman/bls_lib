@@ -4,57 +4,62 @@
 using namespace std;
 using namespace bn;
 
+/* Function: pow_p
+ * power mod p
+ */
+static const mie::Vuint pow_p(const mie::Vuint val, const mie::Vuint power){
+  if(power == 0) return 1;
+  if(power == 1) return val;
+  const mie::Vuint result_sqrt_floor = pow_p(val, power/2);
+  return (((result_sqrt_floor * result_sqrt_floor) % Param::p) * pow_p(val, power % 2)) % Param::p;
+}
+
+/* Function: sqrt_p
+ * sqrt mod p
+ */
+static const mie::Vuint sqrt_p(const mie::Vuint val, bool *valid){
+  if(Param::p % 4 == 3){
+    const mie::Vuint power = (Param::p + 1)/4;
+    const mie::Vuint result = pow_p(val, power);
+    *valid = true;
+    return result;
+  } else { //TODO (for the case of p%4 == 1, doesn't apply to our case for now)
+    *valid = true;
+    return 1;
+  }
+}
+
 /* Function: hash_msg
  * hash message onto curve: h = H(M) \in G_1
  * @param {char*} msg
  * @return {Ec1} point in G_1
  */
 Ec1 hash_msg(const char *msg) {
-  // TODO, swap out. This is a dummy hash function
-  // All code in here is duplicate boilerplate to generate a point on the curve
-  // You can delete all of this.
-  // Referred to: http://www.cplusplus.com/reference/string/stoll/
-  // Add a terminating condition suppose we don't find anything after count blows up
-  long long x, y;
-  string::size_type sz;
+  bn::CurveParam cp = bn::CurveFp254BNb;
+  Param::init(cp);
+  Ec1 hashed_msg_point;
   int count = 0;
   bool squareRootExists = false;
   while(!squareRootExists){
-    string xString = sha256(msg);
-    x = stoll(xString, &sz, 0); //stoll(xString, nullptr, 16); (this line is buggy)
-    x += count << ((int)floor(log2(x)) + 1); //prepending count
-    y = sqrt(x); //TODO: change this into the code using mod p sqrt
-    if(y * y == x) {
-      squareRootExists = true;
-      //return Ec1(x, y);
+    string xString = "0x" + sha256(msg);
+    const mie::Vuint x(xString);
+    //TODO: prepend (why do we even need this in the case of Param::p % 4 == 3?) (Ask Dan)
+    const mie::Vuint x3plusb = ((((x * x) % Param::p) * x) % Param::p + cp.b) % Param::p;
+    const mie::Vuint y =  sqrt_p(x3plusb, &squareRootExists);
+    if(squareRootExists){
+      Fp x_mod_p(x % Param::p);
+      Fp y_mod_p(y % Param::p);
+      const Ec1 result(x_mod_p, y_mod_p);
+      return result;
+    } else {
+      ++count; //To prepend later
     }
-    ++count;
-    /*
-    cout << "sizeof(xString): " << sizeof(xString) << endl;
-    cout << "xString: " << xString << endl;
-    cout << "x: " << x << endl;
-    cout << "sqrt(x): " << sqrt(x) << endl;
-    */
   }
-
-  //cout << "output: " << output << endl;
-
-  bn::CurveParam cp = bn::CurveFp254BNb;
-  Param::init(cp);
-
+  /*Dummy code just to make the function complete*/
   const Point& pt = selectPoint(cp);
-
-  // get g2
-  const Ec2 g2(
-    Fp2(Fp(pt.g2.aa), Fp(pt.g2.ab)),
-    Fp2(Fp(pt.g2.ba), Fp(pt.g2.bb))
-  );
-
-  // get g1
-  const Ec1 g1(pt.g1.a, pt.g1.b);
-
+  const Ec1 g1(pt.g1.a, pt.g1.b); // get g1
   const mie::Vuint rand_msg_mult(rand());
-  Ec1 hashed_msg_point = g1 * rand_msg_mult;
+  hashed_msg_point = g1 * rand_msg_mult;
   return hashed_msg_point;
 }
 
