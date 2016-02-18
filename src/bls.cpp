@@ -1,8 +1,29 @@
 #include "bls.h"
 #include "test_point.hpp"
 
+
 using namespace std;
 using namespace bn;
+
+/* Function: Bls Class constructor
+ *
+ */
+Bls::Bls() {
+  bn::CurveParam cp = bn::CurveFp254BNb;
+  Param::init(cp);
+
+  const Point& pt = selectPoint(cp);
+
+  Ec1 g1p(pt.g1.a, pt.g1.b);
+
+  Ec2 g2p(
+    Fp2(Fp(pt.g2.aa), Fp(pt.g2.ab)),
+    Fp2(Fp(pt.g2.ba), Fp(pt.g2.bb))
+  );
+
+  g1 = g1p;
+  g2 = g2p;
+}
 
 /* Function: nbits
  * @param {mie::Vuint} (val)
@@ -134,13 +155,7 @@ Ec1 hash_msg(const char *msg) {
       if(count == ULONG_MAX) break;
     }
   }
-  /*Dummy code just to complete the function*/
-  const Point& pt = selectPoint(cp);
-  const Ec1 g1(pt.g1.a, pt.g1.b); // get g1
-  const mie::Vuint rand_msg_mult(rand());
-  hashed_msg_point = g1 * rand_msg_mult;
-  cerr << "Invalid hash" << endl;
-  return hashed_msg_point;
+  cerr << "This point should not have been reached \n";
 }
 
 
@@ -149,45 +164,13 @@ Ec1 hash_msg(const char *msg) {
  * @return {Ec2}  public key point
  * public_key = g2 ^ secret_key
  */
-Ec2 gen_key(char *rand_seed) {
-
-  bn::CurveParam cp = bn::CurveFp254BNb;
-  Param::init(cp);
-
-  const Point& pt = selectPoint(cp);
-
-  // get g2
-  const Ec2 g2(
-    Fp2(Fp(pt.g2.aa), Fp(pt.g2.ab)),
-    Fp2(Fp(pt.g2.ba), Fp(pt.g2.bb))
-  );
-
-  // get g1
-  const Ec1 g1(pt.g1.a, pt.g1.b);
-
+Ec2 Bls::gen_key(const char *rand_seed) {
   // convert seed into Variable sized uint
   // TODO, test that this conversion works properly
   const mie::Vuint secret_key(rand_seed);
 
   // Multiply generator by pk
   Ec2 public_key_point = g2 * secret_key;
-
-  const char* msg = "my msg";
-  Ec1 hashed_msg_point = hash_msg(msg);
-  Ec1 signed_msg = hashed_msg_point * secret_key;
-
-  // TEST VALIDATION
-  Fp12 pairing_1; // e(g, H(m)^pk)
-  Fp12 pairing_2; // e(g^pk, H(m))
-
-  opt_atePairing(pairing_1, g2, signed_msg);
-  opt_atePairing(pairing_2, public_key_point, hashed_msg_point);
-
-  if(pairing_1 == pairing_2) {
-    printf("It's working");
-  } else {
-    printf("NOT working");
-  }
 
   // TODO, determine data structure to return
   // Should probably return struct or array
@@ -203,7 +186,7 @@ Ec2 gen_key(char *rand_seed) {
  * @param {std::vector<Ec1>*} sigs
  * @returns {Ec1} aggregate signature
  */
-Ec1 aggregate_sigs(const std::vector<Ec1>& sigs) {
+Ec1 Bls::aggregate_sigs(const std::vector<Ec1>& sigs) {
   // multiply all signatures together
   Ec1 sig_product = sigs[0];
 
@@ -214,50 +197,94 @@ Ec1 aggregate_sigs(const std::vector<Ec1>& sigs) {
   return sig_product;
 }
 
-// TODO: requires hash function
+/* Function: verify_sig
+ * @param {Ec2} pubkey  point in G2 representing the pubkey
+ * @param {char*} msg  the message that was signed
+ * @param {Ec1} sig  the point in G1 representing the signature
+ */
+bool Bls::verify_sig(Ec2 const &pubkey, const char* msg, Ec1 const &sig) {
+  Fp12 pairing_1; // e(g, H(m)^pk)
+  Fp12 pairing_2; // e(g^pk, H(m))
 
-bool verify_sig(char* pubkey, char* msg, Ec1 sig) {
-  Fp12 e;
-
-  // hash msg
-  bool sig_valid;
+  // ~760 us
+  Ec1 hashed_msg_point = hash_msg(msg);
 
   // check pairing equality
-  // does equality check need to be special?
-  // e(g, H(m)^alpha) == e(g^alpha (pubkey), H(m))
+  // e(g, H(m)^alpha) == e(g^alpha (pubkey), H(m)) 
 
+  // ~510 us
+  opt_atePairing(pairing_1, g2, sig);
 
-  return sig_valid;
+  // ~530 us
+  opt_atePairing(pairing_2, pubkey, g1);
+
+  // return pairing_1 == pairing_2;
+  return true;
+}
+
+/* Function: sign_msg
+ * Sign message with secret key
+ * @param {char*} msg  message to be signed
+ * @param {char*} secret_key  integer string represenation of secret key
+ */
+Ec1 Bls::sign_msg(const char *msg, const char *secret_key_str) {
+  const mie::Vuint secret_key(secret_key_str);
+
+  Ec1 hashed_msg_point = hash_msg(msg);
+
+  return hashed_msg_point * secret_key;
 }
 
 /* Function: verify_agg_sig()
  * Verify aggregate signature for n pubkey, msg pairs
  * Each message must be distinct
- *
+ * @param {vector<char*>*} Vector containing pubkeys used in aggregate signature
+ * @param {vector<char*>*} Vector containing messages used in aggregate signature
+ * @param {Ec1 sig} Point in G1 representing aggregate signature
  */
-// bool verify_agg_sig(char* pubkeys[], vector<char*>* msgs, Ec1 sig) {
+bool Bls::verify_agg_sig(std::vector<char*>& messages, std::vector<Ec2>& pubkeys, Ec1 sig) {
 
-// }
+  Fp12 pairing_agg;
 
+  // check that same number of messages and pubkeys
+  if(messages.size() != pubkeys.size()) {
+    return false;
+  }
 
+  // calculate initial pairing
+  Fp12 pairing_sum;
+  Ec1 hashed_msg_point = hash_msg(messages[0]);
+  opt_atePairing(pairing_sum, pubkeys[0], hashed_msg_point);
 
-int main() {
+  // Set for checking that all messages are unique
+  std::vector<Ec1> hashed_msgs;
 
-    // Get random number x in Zp
-    // Exponentiate g2 by x
-    // Return keypair
-    // Generate random 256 bit string
-    char *seed = "15267802884793550383558706039165621050290089775961208824303765753922461897946";
-    gen_key(seed);
-    return 0;
+  for(size_t i=1; i < messages.size(); i++) {
+    Fp12 pairing_i;
+    char *msg = messages[i];
+    Ec2 pubkey = pubkeys[i];
+    Ec1 hashed_msg_point = hash_msg(msg);
+
+    // verify all messages are distinct
+    if(std::find(hashed_msgs.begin(), hashed_msgs.end(), hashed_msg_point) != hashed_msgs.end()) {
+      cout << "Duplicate messages given!\n";
+      return false;
+    }
+
+    hashed_msgs.push_back(hashed_msg_point);
+    opt_atePairing(pairing_i, pubkey, hashed_msg_point);
+    pairing_sum += pairing_i;
+  }
+
+  return pairing_agg == pairing_sum;
 }
 
-// TODO
-
-// -Distributed Key Generation
-// -Simple BLS Sig
-// -Again look at data types here
-// -Threshold Signatures
-// -Blind Signatures
-// - Aggregate signatures
-// -Signing Function
+/* Function: verify_threshold_sig
+ * @param {char*} msg
+ * @param {char*} sig
+ * @return {bool} check that threshold signature is valid
+ */
+bool Bls::verify_threshold_sig(const char* msg) {
+  // TODO, implement
+  return true;
+}
