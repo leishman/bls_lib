@@ -4,8 +4,25 @@
 using namespace std;
 using namespace bn;
 
+/* Function: ord2
+ * val = 2^r * s where s is odd
+ * @param {mie::Vuint}
+ * @param {mie::Vuint *} (s)
+ * @return {mie::Vuint} (r)
+ */
+static const mie::Vuint ord2(const mie::Vuint val, mie::Vuint *s){
+  if((val % 2 == 1) || (val == 0)) {
+    *s = val;
+    return 0;
+  }
+  return ord2(val / 2, s) + 1;
+}
+
 /* Function: pow_p
  * power mod p
+ * @param {Fp} val
+ * @param {mie::Vuint} power
+ * @return {Fp} a value in Fp
  */
 static const Fp pow_p(Fp val, const mie::Vuint power){
   if(power == 0) return 1;
@@ -15,18 +32,37 @@ static const Fp pow_p(Fp val, const mie::Vuint power){
 }
 
 /* Function: sqrt_p
- * sqrt mod p
+ * returns a possible sqrt mod p, implements the Tonelli-Shanks algorithm (https://en.wikipedia.org/wiki/Tonelli%E2%80%93Shanks_algorithm)
+ * @param {Fp} val
+ * @param {bool *} valid
+ * @return {Fp} a value in Fp
  */
 static Fp sqrt_p(Fp val, bool *valid){
-  if(Param::p % 4 == 3){
-    const mie::Vuint power = (Param::p + 1)/4;
-    Fp result = pow_p(val, power);
+  if(val == 0 || Param::p == 2) {
     *valid = true;
-    return result;
-  } else { //TODO (for the case of p%4 == 1, doesn't apply to our case for now)
-    *valid = true;
-    return 1;
+    return val;
   }
+  if(pow_p(val, (Param::p - 1)/2) == -1) { //val is a quadratic nonresidue mod p
+    *valid = false;
+    return -1;
+  }
+  *valid = true;
+  mie::Vuint s;
+  const mie::Vuint r = ord2(Param::p - 1, &s);
+  if(r == 1) return pow_p(val, (s+1)/2); //p % 4 = 3
+  Fp n = (Param::p % 8 == 5) ? 2 : 2; //quadratic nonresidue (TODO: handle else case)
+  Fp m = pow_p(n, s); //generator of the 2-sylow subgroup of Z_p^*
+  Fp b = pow_p(2, s); //ordp_b < ordp_m
+  mie::Vuint ordp_m = mie::power(2, r);
+  mie::Vuint ordp_b = mie::power(2, r-1);
+  while(pow_p(b, ordp_b) == 1) ordp_b /= 2;
+  ordp_b *= 2;h
+  Fp result = 1;
+  while(b != 1){
+    //find lowest i such that pow_p(b, 2^i) = 1
+  //result
+  }
+  return m;
 }
 
 /* Function: hash_msg
