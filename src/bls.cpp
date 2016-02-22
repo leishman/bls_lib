@@ -44,9 +44,11 @@ static const Fp pow_p(Fp val, const mie::Vuint power){
  * returns a possible sqrt mod p, implements the Tonelli-Shanks algorithm (https://en.wikipedia.org/wiki/Tonelli%E2%80%93Shanks_algorithm)
  * @param {Fp} val
  * @param {bool *} valid
+ * @param {Fp} n (a pre-computed non-quadratic reside mod p) //need to find a better way to pass in this info
  * @return {Fp} a value in Fp
+ * TODO: simplify (reorganize) function
  */
-static Fp sqrt_p(Fp val, bool *valid){
+static Fp sqrt_p(Fp val, bool *valid, Fp n){
   if(val == 0 || Param::p == 2) {
     *valid = true;
     return val;
@@ -59,7 +61,6 @@ static Fp sqrt_p(Fp val, bool *valid){
   mie::Vuint s;
   const mie::Vuint r = ord2(Param::p - 1, &s);
   if(r == 1) return pow_p(val, (s+1)/2); //p % 4 = 3
-  Fp n = (Param::p % 8 == 5) ? 2 : 2; //quadratic nonresidue (TODO: handle else case)
   Fp m = pow_p(n, s); //generator of the 2-sylow subgroup of Z_p^*
   Fp b = pow_p(2, s); //ordp_b < ordp_m
   mie::Vuint ordp_m = mie::power(2, r);
@@ -68,7 +69,7 @@ static Fp sqrt_p(Fp val, bool *valid){
   ordp_b *= 2;
   Fp result = 1;
   while(b != 1){
-    //find lowest i such that pow_p(b, 2^i) = 1
+    //sub in nonQR here, complete this part
   //result
   }
   return m;
@@ -85,6 +86,22 @@ static Fp prepend_p(const mie::Vuint val, const mie::Vuint numDigits, unsigned l
   return result += Fp(pre % Param::p) * pow_p(2, numDigits);
 }
 
+/* Function: randNonQR_p
+ * @return {Fp} a random nonquadratic residue of p
+ * (actually this is not random, perhaps the name should be changed)
+ */
+static Fp randNonQR_p(){
+  if(Param::p == 2 || Param::p % 4 == 3) return 0; //always have QR here (this result won't be used anyway)
+  if(Param::p % 8 == 5) return Fp(2);
+  Fp result = 0;
+  const mie::Vuint e((Param::p - 1)/2);
+  for(int i = 0; i < Param::p; ++i){ //change the upper bound to sqrt(p)
+    result += 1;
+    if(pow_p(result, e) != 1) return result;
+  }
+  return 0;
+}
+
 /* Function: hash_msg
  * hash message onto curve: h = H(M) \in G_1
  * @param {char*} msg
@@ -93,6 +110,7 @@ static Fp prepend_p(const mie::Vuint val, const mie::Vuint numDigits, unsigned l
 Ec1 hash_msg(const char *msg) {
   bn::CurveParam cp = bn::CurveFp254BNb;
   Param::init(cp);
+  Fp nonQR_p = randNonQR_p();
   Ec1 hashed_msg_point;
   unsigned long count = 0; //32-bit field
   bool squareRootExists = false;
@@ -100,20 +118,17 @@ Ec1 hash_msg(const char *msg) {
     string xString = "0x" + sha256(msg);
     const mie::Vuint xVuintSHA256(xString);
     const mie::Vuint xVuint = xVuintSHA256 >> 1;
-    Fp sign(2 *(xVuintSHA256 % 2) - 1); //first bit as sign
     const mie::Vuint numDigits = nbits(xVuint); //TODO: optimize it, don't have to find this each time
     Fp x = prepend_p(xVuint, numDigits, count); //what to do if doesn't work for any count?
     Fp x3plusb = x * x * x + cp.b;
-    Fp y = sqrt_p(x3plusb, &squareRootExists);
-    if(xVuintSHA256 % 2 != 0) y = -y;
+    Fp y = sqrt_p(x3plusb, &squareRootExists, nonQR_p);
+    if(xVuintSHA256 % 2 != 0) y = -y; //first bit as sign
     if(squareRootExists){
       const Ec1 result(x, y);
       return result;
     } else {
       ++count;
-      if(count == ULONG_MAX){
-        cerr << "Not-hashable, 32-bit unsigned count overflowed" << endl;
-      }
+      if(count == ULONG_MAX) break;
     }
   }
   /*Dummy code just to complete the function*/
