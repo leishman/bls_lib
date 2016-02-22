@@ -4,9 +4,18 @@
 using namespace std;
 using namespace bn;
 
+/* Function: nbits
+ * @param {mie::Vuint} (val)
+ * @return {mie::Vuint} (number of bits of the input integer)
+ */
+static const mie::Vuint nbits(const mie::Vuint val){
+  if(val <= 1) return 1;
+  return nbits(val / 2) + 1;
+}
+
 /* Function: ord2
  * val = 2^r * s where s is odd
- * @param {mie::Vuint}
+ * @param {mie::Vuint} (val)
  * @param {mie::Vuint *} (s)
  * @return {mie::Vuint} (r)
  */
@@ -56,13 +65,24 @@ static Fp sqrt_p(Fp val, bool *valid){
   mie::Vuint ordp_m = mie::power(2, r);
   mie::Vuint ordp_b = mie::power(2, r-1);
   while(pow_p(b, ordp_b) == 1) ordp_b /= 2;
-  ordp_b *= 2;h
+  ordp_b *= 2;
   Fp result = 1;
   while(b != 1){
     //find lowest i such that pow_p(b, 2^i) = 1
   //result
   }
   return m;
+}
+
+/* Function: prepend_p
+ * @param {mie::Vuint} val
+ * @param {mie::Vuint} numDigits (binary length val)
+ * @param {unsigned long} pre (to be prepended)
+ * @return {Fp} the prepended value (1|val) % p, in Fp
+ */
+static Fp prepend_p(const mie::Vuint val, const mie::Vuint numDigits, unsigned long pre){
+  Fp result(val % Param::p);
+  return result += Fp(pre % Param::p) * pow_p(2, numDigits);
 }
 
 /* Function: hash_msg
@@ -74,13 +94,13 @@ Ec1 hash_msg(const char *msg) {
   bn::CurveParam cp = bn::CurveFp254BNb;
   Param::init(cp);
   Ec1 hashed_msg_point;
-  int count = 0;
+  unsigned long count = 0; //32-bit field
   bool squareRootExists = false;
   while(!squareRootExists){
     string xString = "0x" + sha256(msg);
     const mie::Vuint xVuint(xString);
-    Fp x(xVuint % Param::p);
-    //TODO: prepend (why do we even need this in the case of Param::p % 4 == 3?) (Ask Dan)
+    const mie::Vuint numDigits = nbits(xVuint); //TODO: optimize it, don't have to find this each time
+    Fp x = prepend_p(xVuint, numDigits, count); //what to do if doesn't work for any count?
     Fp x3plusb = x * x * x + cp.b;
     Fp y = sqrt_p(x3plusb, &squareRootExists);
     if(squareRootExists){
@@ -88,6 +108,9 @@ Ec1 hash_msg(const char *msg) {
       return result;
     } else {
       ++count;
+      if(count == ULONG_MAX){
+        cerr << "Not-hashable, 32-bit unsigned count overflowed" << endl;
+      }
     }
   }
   /*Dummy code just to complete the function*/
