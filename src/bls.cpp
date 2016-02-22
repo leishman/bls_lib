@@ -98,11 +98,14 @@ Ec1 hash_msg(const char *msg) {
   bool squareRootExists = false;
   while(!squareRootExists){
     string xString = "0x" + sha256(msg);
-    const mie::Vuint xVuint(xString);
+    const mie::Vuint xVuintSHA256(xString);
+    const mie::Vuint xVuint = xVuintSHA256 >> 1;
+    Fp sign(2 *(xVuintSHA256 % 2) - 1); //first bit as sign
     const mie::Vuint numDigits = nbits(xVuint); //TODO: optimize it, don't have to find this each time
     Fp x = prepend_p(xVuint, numDigits, count); //what to do if doesn't work for any count?
     Fp x3plusb = x * x * x + cp.b;
     Fp y = sqrt_p(x3plusb, &squareRootExists);
+    if(xVuintSHA256 % 2 != 0) y = -y;
     if(squareRootExists){
       const Ec1 result(x, y);
       return result;
