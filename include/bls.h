@@ -9,6 +9,8 @@
  */
 
 #include <iostream>
+#include <cmath>
+#include <typeinfo>
 #include "bn.h"
-
+#include "sha256.h"
 
