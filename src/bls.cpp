@@ -1,29 +1,8 @@
 #include "bls.h"
 #include "test_point.hpp"
 
-
 using namespace std;
 using namespace bn;
-
-/* Function: Bls Class constructor
- * TODO: what is best way to select/load point?
- */
-Bls::Bls() {
-  bn::CurveParam cp = bn::CurveFp254BNb;
-  Param::init(cp);
-
-  const Point& pt = selectPoint(cp);
-
-  Ec1 g1p(pt.g1.a, pt.g1.b);
-
-  Ec2 g2p(
-    Fp2(Fp(pt.g2.aa), Fp(pt.g2.ab)),
-    Fp2(Fp(pt.g2.ba), Fp(pt.g2.bb))
-  );
-
-  g1 = g1p;
-  g2 = g2p;
-}
 
 /* Function: nbits
  * @param {mie::Vuint} (val)
@@ -131,7 +110,7 @@ static Fp prepend_p(const mie::Vuint val, const mie::Vuint numDigits, unsigned l
  * @param {char*} msg
  * @return {Ec1} point in G_1
  */
-Ec1 hash_msg(const char *msg) {
+static Ec1 hash_msg(const char *msg) {
   bn::CurveParam cp = bn::CurveFp254BNb;
   Param::init(cp);
   Fp nonQR_p = randNonQR_p();
@@ -159,10 +138,32 @@ Ec1 hash_msg(const char *msg) {
 }
 
 
+/* Function: Bls Class constructor
+ * TODO: what is best way to select/load point?
+ */
+Bls::Bls() {
+  bn::CurveParam cp = bn::CurveFp254BNb;
+  Param::init(cp);
+
+  const Point& pt = selectPoint(cp);
+
+  Ec1 g1p(pt.g1.a, pt.g1.b);
+
+  Ec2 g2p(
+    Fp2(Fp(pt.g2.aa), Fp(pt.g2.ab)),
+    Fp2(Fp(pt.g2.ba), Fp(pt.g2.bb))
+  );
+
+  g1 = g1p;
+  g2 = g2p;
+}
+
+
 /*
  * @param {char* } rand_seed, string representation of 256 bit int
  * @return {Ec2}  public key point
  * public_key = g2 ^ secret_key
+ * TODO: create/find key format for storage and transmission
  */
 Ec2 Bls::gen_key(const char *rand_seed) {
   // convert seed into Variable sized uint
@@ -206,17 +207,17 @@ bool Bls::verify_sig(Ec2 const &pubkey, const char* msg, Ec1 const &sig) {
   Fp12 pairing_1; // e(g, H(m)^pk)
   Fp12 pairing_2; // e(g^pk, H(m))
 
-  // ~760 us
+  // ~750 us
   Ec1 hashed_msg_point = hash_msg(msg);
 
   // check pairing equality
   // e(g, H(m)^alpha) == e(g^alpha (pubkey), H(m)) 
 
-  // ~510 us
+  // ~500 us
   opt_atePairing(pairing_1, g2, sig);
 
-  // ~530 us
-  opt_atePairing(pairing_2, pubkey, g1);
+  // ~500 us
+  opt_atePairing(pairing_2, pubkey, hashed_msg_point);
 
   return pairing_1 == pairing_2;
 }
@@ -241,10 +242,7 @@ Ec1 Bls::sign_msg(const char *msg, const char *secret_key_str) {
  * @param {vector<char*>*} Vector containing messages used in aggregate signature
  * @param {Ec1 sig} Point in G1 representing aggregate signature
  */
-bool Bls::verify_agg_sig(std::vector<char*>& messages, std::vector<Ec2>& pubkeys, Ec1 sig) {
-
-  Fp12 pairing_agg;
-
+bool Bls::verify_agg_sig(std::vector<const char*> &messages, std::vector<Ec2> &pubkeys, Ec1 sig) {
   // check that same number of messages and pubkeys
   if(messages.size() != pubkeys.size()) {
     return false;
@@ -260,9 +258,8 @@ bool Bls::verify_agg_sig(std::vector<char*>& messages, std::vector<Ec2>& pubkeys
 
   for(size_t i=1; i < messages.size(); i++) {
     Fp12 pairing_i;
-    char *msg = messages[i];
+    Ec1 hashed_msg_point = hash_msg(messages[i]);
     Ec2 pubkey = pubkeys[i];
-    Ec1 hashed_msg_point = hash_msg(msg);
 
     // verify all messages are distinct
     if(std::find(hashed_msgs.begin(), hashed_msgs.end(), hashed_msg_point) != hashed_msgs.end()) {
@@ -272,8 +269,13 @@ bool Bls::verify_agg_sig(std::vector<char*>& messages, std::vector<Ec2>& pubkeys
 
     hashed_msgs.push_back(hashed_msg_point);
     opt_atePairing(pairing_i, pubkey, hashed_msg_point);
-    pairing_sum += pairing_i;
+    pairing_sum *= pairing_i;
   }
+
+  // calculate pairing with agg signature
+  Fp12 pairing_agg;
+  opt_atePairing(pairing_agg, g2, sig);
+
 
   return pairing_agg == pairing_sum;
 }

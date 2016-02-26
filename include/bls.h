@@ -20,13 +20,6 @@
 using namespace std;
 using namespace bn;
 
-/* Function: hash_msg
-* hash message onto curve: h = H(M) \in G_1
-* @param {char*} msg
-* @return {Ec1} point in G_1
-*/
-Ec1 hash_msg(const char *msg);
-
 class Bls {
   private:
   Ec1 g1;
@@ -71,7 +64,7 @@ class Bls {
   * @param {vector<char*>*} Vector containing messages used in aggregate signature
   * @param {Ec1 sig} Point in G1 representing aggregate signature
   */
-  bool verify_agg_sig(std::vector<char*> &messages, std::vector<Ec2> &pubkeys, Ec1 sig);
+  bool verify_agg_sig(std::vector<const char*> &messages, std::vector<Ec2> &pubkeys, Ec1 sig);
 
   /* Function: verify_threshold_sig
   * @param {char*} msg
