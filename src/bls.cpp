@@ -6,7 +6,7 @@ using namespace std;
 using namespace bn;
 
 /* Function: Bls Class constructor
- *
+ * TODO: what is best way to select/load point?
  */
 Bls::Bls() {
   bn::CurveParam cp = bn::CurveFp254BNb;
@@ -218,8 +218,7 @@ bool Bls::verify_sig(Ec2 const &pubkey, const char* msg, Ec1 const &sig) {
   // ~530 us
   opt_atePairing(pairing_2, pubkey, g1);
 
-  // return pairing_1 == pairing_2;
-  return true;
+  return pairing_1 == pairing_2;
 }
 
 /* Function: sign_msg
