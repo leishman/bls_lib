@@ -1,34 +1,29 @@
-
 ifeq ($(shell uname -s),Cygwin)
 	CXX= x86_64-w64-mingw32-g++
 endif
 
+# Set compiler to g++
 CXX=g++
+LDFLAGS = -lm -lzm -lgmp -lgmpxx -L../../ate-pairing/lib
+CFLAGS= -g -O2 -m64
+TARGET= ../lib/libbls.a
 
-CFLAGS= -g -O2
-HEADER= ../../ate-pairing/include/zm.h ../../ate-pairing/include/bn.h ../../ate-pairing/include/zm2.h ../include/bls.h 
-INC_DIR+= -I../include -I../../xbyak -I../../ate-pairing/include
+all: $(TARGET)
+	make clean # force recompile
+	make ../lib/libbls.a
 
-LDFLAGS = -lm -lzm $(LIB_DIR) -lgmp -lgmpxx
-LIB_DIR+= -L../../ate-pairing/lib
-BIT=-m64
+# TODO: This archive not currently used
+../lib/libbls.a: sha256.o bls.o
+	rm -f $@
+	ar -r $@ $^
 
-ifeq ($(BIT),-m64)
-	TARGET += bls
-endif
+sha256.o: sha256.cpp
+	$(CXX) -c sha256.cpp -I../include/
 
-# all:$(TARGET)
-.SUFFIXES: .cpp
-.cpp.o:
-	$(CXX) -c $< -o $@ $(CFLAGS) $(CFLAGS_WARN) $(CFLAGS_ALWAYS) $(INC_DIR) $(BIT)
-
-.c.o:
-	$(CC) -c $< -o $@ $(CFLAGS) $(CFLAGS_WARN) $(CFLAGS_ALWAYS) $(INC_DIR) $(BIT)
-
-bls: bls.o ../../ate-pairing/lib/libzm.a
-	$(CXX) -o $@ $< $(LDFLAGS) $(BIT)
+bls.o: bls.cpp
+	$(CXX) -c bls.cpp -I../include -I../../xbyak -I../../ate-pairing/include
 
 clean:
-	$(RM) *.o $(TARGET)
+	rm *.o
+	rm -f $(TARGET)
 
-bls.o: bls.cpp $(HEADER)
