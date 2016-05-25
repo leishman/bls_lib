@@ -1,291 +1,388 @@
+#ifndef BLS_LIB
+#define BLS_LIB
+
 #include "bls.h"
 #include "test_point.hpp"
 
 using namespace std;
 using namespace bn;
 
-/* Function: nbits
- * @param {mie::Vuint} (val)
- * @return {mie::Vuint} (number of bits of the input integer)
- */
-static const mie::Vuint nbits(const mie::Vuint val){
-  if(val <= 1) return 1;
-  return nbits(val / 2) + 1;
-}
+namespace bls {
+  /* 
+   * Function: Bls Class constructor
+   */
+  Bls::Bls() {
+    bn::CurveParam cp = bn::CurveFp254BNb;
+    Param::init(cp);
 
-/* Function: ord2
- * val = 2^r * s where s is odd
- * @param {mie::Vuint} (val)
- * @param {mie::Vuint *} (s)
- * @return {mie::Vuint} (r)
- */
-static const mie::Vuint ord2(const mie::Vuint val, mie::Vuint *s){
-  if((val % 2 == 1) || (val == 0)) {
-    *s = val;
-    return 0;
+    const Point& pt = selectPoint(cp);
+
+    Ec1 g1p(pt.g1.a, pt.g1.b);
+
+    Ec2 g2p(
+      Fp2(Fp(pt.g2.aa), Fp(pt.g2.ab)),
+      Fp2(Fp(pt.g2.ba), Fp(pt.g2.bb))
+    );
+
+    g1 = g1p;
+    g2 = g2p;
   }
-  return ord2(val / 2, s) + 1;
-}
 
-/* Function: pow_p
- * power mod p
- * @param {Fp} val
- * @param {mie::Vuint} power
- * @return {Fp} a value in Fp
- */
-static const Fp pow_p(Fp val, const mie::Vuint power){
-  if(power == 0) return 1;
-  if(power == 1) return val;
-  Fp result_sqrt_floor = pow_p(val, power/2);
-  return (result_sqrt_floor * result_sqrt_floor) * pow_p(val, power % 2);
-}
-
-/* Function: sqrt_p
- * returns a possible sqrt mod p, implements the Tonelli-Shanks algorithm (https://en.wikipedia.org/wiki/Tonelli%E2%80%93Shanks_algorithm)
- * @param {Fp} val
- * @param {bool *} valid
- * @param {Fp} n (a pre-computed non-quadratic reside mod p) //need to find a better way to pass in this info
- * @return {Fp} a value in Fp
- * TODO: simplify (reorganize) function
- */
-static Fp sqrt_p(Fp val, bool *valid, Fp n){
-  if(val == 0 || Param::p == 2) {
-    *valid = true;
-    return val;
-  }
-  if(pow_p(val, (Param::p - 1)/2) == -1) { //val is a quadratic nonresidue mod p
-    *valid = false;
-    return -1;
-  }
-  *valid = true;
-  mie::Vuint s;
-  const mie::Vuint r = ord2(Param::p - 1, &s);
-  Fp y = pow_p(val, (s+1)/2);
-  if(r == 1) return y; //p % 4 = 3
-  Fp m = pow_p(n, s); //n^s (generater of the 2-sylow subgroup of Z_p)
-  Fp b = pow_p(val, s);
-  mie::Vuint twopowr = 1;
-  for(mie::Vuint i = 0; i < r; i += 1) twopowr = twopowr * 2;
-  mie::Vuint count = 1;
-  Fp z = m;
-  while(count < twopowr){
-    if(z * z == b) return y/z;
-    z *= m;
-    count += 1;
-  }
-  *valid = false;
-  cerr << "Some error occured." << endl;
-  return -1;
-}
-
-/* Function: randNonQR_p
- * @return {Fp} a random nonquadratic residue of p
- * (actually this is not random, perhaps the name should be changed)
- */
-static Fp randNonQR_p(){
-  if(Param::p == 2 || Param::p % 4 == 3) return 0; //always have QR here (this result won't be used anyway)
-  if(Param::p % 8 == 5) return Fp(2);
-  Fp result = 0;
-  const mie::Vuint e((Param::p - 1)/2);
-  for(int i = 0; i < Param::p; ++i){ //change the upper bound to sqrt(p)
-    result += 1;
-    if(pow_p(result, e) != 1) return result;
-  }
-  return 0;
-}
-
-/* Function: prepend_p
- * @param {mie::Vuint} val
- * @param {mie::Vuint} numDigits (binary length val)
- * @param {unsigned long} pre (to be prepended)
- * @return {Fp} the prepended value (1|val) % p, in Fp
- */
-static Fp prepend_p(const mie::Vuint val, const mie::Vuint numDigits, unsigned long pre){
-  Fp result(val % Param::p);
-  return result += Fp(pre % Param::p) * pow_p(2, numDigits);
-}
-
-/* Function: hash_msg
- * hash message onto curve: h = H(M) \in G_1
- * @param {char*} msg
- * @return {Ec1} point in G_1
- */
-static Ec1 hash_msg(const char *msg) {
-  bn::CurveParam cp = bn::CurveFp254BNb;
-  Param::init(cp);
-  Fp nonQR_p = randNonQR_p();
-  Ec1 hashed_msg_point;
-  unsigned long count = 0; //32-bit field
-  bool squareRootExists = false;
-  while(!squareRootExists){
-    string xString = "0x" + sha256(msg);
-    const mie::Vuint xVuintSHA256(xString);
-    const mie::Vuint xVuint = xVuintSHA256 >> 1;
-    const mie::Vuint numDigits = nbits(xVuint); //TODO: optimize it, don't have to find this each time
-    Fp x = prepend_p(xVuint, numDigits, count); //what to do if doesn't work for any count?
-    Fp x3plusb = x * x * x + cp.b;
-    Fp y = sqrt_p(x3plusb, &squareRootExists, nonQR_p);
-    if(xVuintSHA256 % 2 != 0) y = -y; //first bit as sign
-    if(squareRootExists){
-      const Ec1 result(x, y);
-      return result;
-    } else {
-      ++count;
-      if(count == ULONG_MAX) break;
+  PubKey Bls::genPubKey(const char *rand_seed) {
+    // convert seed into Variable sized uint
+    mie::Vsint s_secret_key(rand_seed);
+    
+    // test that rand_seed is within proper limits
+    if(s_secret_key <= 0) {
+      throw std::invalid_argument("Cannot have zero or negative secret key");
+    } else if (s_secret_key >= Param::p) {
+      throw std::invalid_argument("Secret key too large");
     }
-  }
-  cerr << "This point should not have been reached \n";
-}
 
+    mie::Vuint secret_key(s_secret_key.toString());
 
-/* Function: Bls Class constructor
- * TODO: what is best way to select/load point?
- */
-Bls::Bls() {
-  bn::CurveParam cp = bn::CurveFp254BNb;
-  Param::init(cp);
+    // Multiply generator by pk
+    Ec2 public_key_point = g2 * secret_key;
 
-  const Point& pt = selectPoint(cp);
-
-  Ec1 g1p(pt.g1.a, pt.g1.b);
-
-  Ec2 g2p(
-    Fp2(Fp(pt.g2.aa), Fp(pt.g2.ab)),
-    Fp2(Fp(pt.g2.ba), Fp(pt.g2.bb))
-  );
-
-  g1 = g1p;
-  g2 = g2p;
-}
-
-
-/*
- * @param {char* } rand_seed, string representation of 256 bit int
- * @return {Ec2}  public key point
- * public_key = g2 ^ secret_key
- * TODO: create/find key format for storage and transmission
- */
-Ec2 Bls::gen_key(const char *rand_seed) {
-  // convert seed into Variable sized uint
-  // TODO, test that this conversion works properly
-  const mie::Vuint secret_key(rand_seed);
-
-  // Multiply generator by pk
-  Ec2 public_key_point = g2 * secret_key;
-
-  // TODO, determine data structure to return
-  // Should probably return struct or array
-  // Perhaps this method should just return the
-  // pubkey and should take as input the private key
-  // so that can be generated by whatever means possible
-  return public_key_point;
-}
-
-
-/* Function: aggregate_sigs()
- * Multiply signatures together to create aggregate signature
- * @param {std::vector<Ec1>*} sigs
- * @returns {Ec1} aggregate signature
- */
-Ec1 Bls::aggregate_sigs(const std::vector<Ec1>& sigs) {
-  // multiply all signatures together
-  Ec1 sig_product = sigs[0];
-
-  for(size_t i=1; i < sigs.size(); i++) {
-    // TODO, should this be addition here? Ask Dan
-    sig_product = sig_product + sigs[i];
-  }
-  return sig_product;
-}
-
-/* Function: verify_sig
- * @param {Ec2} pubkey  point in G2 representing the pubkey
- * @param {char*} msg  the message that was signed
- * @param {Ec1} sig  the point in G1 representing the signature
- */
-bool Bls::verify_sig(Ec2 const &pubkey, const char* msg, Ec1 const &sig) {
-  Fp12 pairing_1; // e(g, H(m)^pk)
-  Fp12 pairing_2; // e(g^pk, H(m))
-
-  // ~750 us
-  Ec1 hashed_msg_point = hash_msg(msg);
-
-  // check pairing equality
-  // e(g, H(m)^alpha) == e(g^alpha (pubkey), H(m)) 
-
-  // ~500 us
-  opt_atePairing(pairing_1, g2, sig);
-
-  // ~500 us
-  opt_atePairing(pairing_2, pubkey, hashed_msg_point);
-
-  return pairing_1 == pairing_2;
-}
-
-/* Function: sign_msg
- * Sign message with secret key
- * @param {char*} msg  message to be signed
- * @param {char*} secret_key  integer string represenation of secret key
- */
-Ec1 Bls::sign_msg(const char *msg, const char *secret_key_str) {
-  const mie::Vuint secret_key(secret_key_str);
-
-  Ec1 hashed_msg_point = hash_msg(msg);
-
-  return hashed_msg_point * secret_key;
-}
-
-/* Function: verify_agg_sig()
- * Verify aggregate signature for n pubkey, msg pairs
- * Each message must be distinct
- * @param {vector<char*>*} Vector containing pubkeys used in aggregate signature
- * @param {vector<char*>*} Vector containing messages used in aggregate signature
- * @param {Ec1 sig} Point in G1 representing aggregate signature
- */
-bool Bls::verify_agg_sig(std::vector<const char*> &messages, std::vector<Ec2> &pubkeys, Ec1 sig) {
-  // check that same number of messages and pubkeys
-  if(messages.size() != pubkeys.size()) {
-    return false;
+    return PubKey(public_key_point);
   }
 
-  // calculate initial pairing
-  Fp12 pairing_sum;
-  Ec1 hashed_msg_point = hash_msg(messages[0]);
-  opt_atePairing(pairing_sum, pubkeys[0], hashed_msg_point);
+  PubKey Bls::genPubKey(const string& seed) {
+    return genPubKey(seed.c_str());
+  }
 
-  // Set for checking that all messages are unique
-  std::vector<Ec1> hashed_msgs;
+  Sig Bls::aggregateSigs(const std::vector<Sig>& sigs) {
+    Ec1 sig_product = sigs[0].ec1;
 
-  for(size_t i=1; i < messages.size(); i++) {
-    Fp12 pairing_i;
-    Ec1 hashed_msg_point = hash_msg(messages[i]);
-    Ec2 pubkey = pubkeys[i];
+    for(size_t i=1; i < sigs.size(); i++) {
+      sig_product = sig_product + sigs[i].ec1;
+    }
 
-    // verify all messages are distinct
-    if(std::find(hashed_msgs.begin(), hashed_msgs.end(), hashed_msg_point) != hashed_msgs.end()) {
-      cout << "Duplicate messages given!\n";
+    return Sig(sig_product);
+  }
+
+  bool Bls::verifySig(PubKey const &pubkey, const char* msg, Sig const &sig) {
+    Fp12 pairing_1; // e(g, H(m)^sk)
+    Fp12 pairing_2; // e(g^sk, H(m))
+
+    // ~100 us
+    Ec1 hashed_msg_point = hashMsgWithPubkey(msg, pubkey.ec2);
+
+    // check pairing equality
+    // e(g, H(m)^alpha) == e(g^alpha (pubkey), H(m)) 
+
+    // ~500 us
+    opt_atePairing(pairing_1, g2, sig.ec1);
+
+    // ~500 us
+    opt_atePairing(pairing_2, pubkey.ec2, hashed_msg_point);
+
+    return pairing_1 == pairing_2;
+  }
+
+  Sig Bls::signMsg(const char *msg, const char *secret_key_str, const PubKey &pubkey) {
+    const mie::Vuint secret_key(secret_key_str);
+    return signMsg(msg, secret_key, pubkey);
+  }
+
+  Sig Bls::signMsg(const char *msg, const mie::Vuint secret_key, const PubKey &pubkey) {
+    Ec1 hashed_msg_point = hashMsgWithPubkey(msg, pubkey.ec2);
+    return Sig(hashed_msg_point * secret_key);
+  }
+
+  Sig Bls::signMsg(std::string& msg, const mie::Vuint secret_key, const PubKey &pubkey) {
+    return signMsg(msg.c_str(), secret_key, pubkey);
+  }
+
+  bool Bls::verifyAggSig(std::vector<const char*> &messages, std::vector<PubKey> &pubkeys, Sig const &sig) {
+    // check that same number of messages and pubkeys
+    if(messages.size() != pubkeys.size()) {
       return false;
     }
 
+    // calculate initial pairing
+    Fp12 pairing_prod;
+    Ec1 hashed_msg_point = hashMsgWithPubkey(messages[0], pubkeys[0].ec2);
+    opt_atePairing(pairing_prod, pubkeys[0].ec2, hashed_msg_point);
+
+    // Set for checking that all messages are unique
+    std::vector<Ec1> hashed_msgs;
     hashed_msgs.push_back(hashed_msg_point);
-    opt_atePairing(pairing_i, pubkey, hashed_msg_point);
-    pairing_sum *= pairing_i;
+
+    for(size_t i=1; i < messages.size(); i++) {
+      Fp12 pairing_i;
+      Ec1 hashed_msg_point = hashMsgWithPubkey(messages[i], pubkeys[i].ec2);
+      Ec2 pubkey = pubkeys[i].ec2;
+      hashed_msgs.push_back(hashed_msg_point);
+      opt_atePairing(pairing_i, pubkey, hashed_msg_point);
+      pairing_prod *= pairing_i;
+    }
+
+    // calculate pairing with agg signature
+    Fp12 pairing_agg;
+    opt_atePairing(pairing_agg, g2, sig.ec1);
+
+    return pairing_agg == pairing_prod;
   }
 
-  // calculate pairing with agg signature
-  Fp12 pairing_agg;
-  opt_atePairing(pairing_agg, g2, sig);
+  Ec1 Bls::hashMsgWithPubkey(const char *msg, const Ec2 &pk) {
+    unsigned char digest[SHA256::DIGEST_SIZE];
+    memset(digest,0,SHA256::DIGEST_SIZE);
+
+    SHA256 ctx = SHA256();
+    ctx.init();
+
+    // update with pubkey
+    std::string pkstr = pk.p[0].toString();
+    ctx.update( (unsigned char*)pkstr.c_str(), pkstr.length() );
+
+    // update with msg
+    ctx.update( (unsigned char*)msg, strlen(msg) );
+
+    // calculate final digest
+    ctx.final(digest);
+
+    char buf[2*SHA256::DIGEST_SIZE+3];
+    // add null terminator to end
+    buf[2*SHA256::DIGEST_SIZE] = 0;
+
+    // prepend with 0x
+    buf[0] = '0';
+    buf[1] = 'x';
+
+    // fill buf with digest
+    for (int i = 0; i < SHA256::DIGEST_SIZE; i++) {
+      sprintf(buf+(i*2)+2, "%02x", digest[i]);
+    }
+
+    // map hash onto curve
+    return mapHashOntoCurve(buf);
+  } 
+
+  void Bls::genThreshKeys(const char* secret, size_t t, size_t n, std::vector<thresholdPoint>& pair_vec) {
+    // generate t-1 random numbers (TODO: do these need to be mod p?)
+
+    // TODO: add error checks
+    // vector of random coefficients
+    std::vector<mie::Vuint> r_vec(t-1);
+
+    for(uint i=0; i < t-1; i++) {
+      // generate random number in Fp
+      // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      // TODO: REMOVE RAND() FROM THIS CODE.
+      // THIS IS A PLACEHOLDER ONLY AND IS NOT SECURE and is ONLY A PLACEHOLDER!!!!!!!!!!!
+      r_vec[i] = mie::Vuint(random() % 100);
+    }
+
+    mie::Vuint s(secret);
+    assert(s > 0);
+
+    // calculate n points on curve (x values need not be random) 
+    for(uint i=1; i <= n; i++) {
+      mie::Vuint res = calcPolynomial(r_vec, s, i);
+      pair_vec.push_back({i, Fp(res)});
+    }
+  }
+
+  Sig Bls::combineThresholdSigs(const std::vector<thresholdSigPoint>& sigs, size_t t) {
+    // calculate lambdas
+    std::vector<Fp> lambdas;
+
+    // calculate each lambda
+    for(size_t j=0; j < t; j++) {
+      Fp l_j(1);
+
+      // calculate lambda
+      for(size_t m=0; m < t; m++) {
+        if(m == j) continue;
+        l_j *= (Fp(0) - sigs[m].x) / (sigs[j].x - sigs[m].x);
+      }
+
+      // cout << "labmbda: " << l_j << endl;
+      lambdas.push_back(l_j);
+    }
+
+    Ec1 sig = sigs[0].y.ec1 * lambdas[0].get();
+    // cout << "temp sig: " << sig << endl;
+
+    for(size_t i=1; i < lambdas.size(); i++) {
+      sig += sigs[i].y.ec1 * lambdas[i].get();
+      // cout << "temp sig: " << sig << endl;
+    }
+
+    return Sig(sig);
+  }
+
+  // Test to see that math checks out
+  Fp Bls::recoverSecret(const std::vector<shamirPoint>& points, size_t t) {
+    // calculate lambdas
+    std::vector<Fp> lambdas;
+
+    // calculate each lambda
+    for(size_t j=0; j < t; j++) {
+      Fp l_j(1);
+      // calculate lambda
+      for(size_t m=0; m < t; m++) {
+        if(m == j) continue;
+        l_j *= (Fp(0) - points[m].x) / (points[j].x - points[m].x);
+      }
+
+      lambdas.push_back(l_j);
+    }
+
+    Fp sig = points[0].y * lambdas[0];
+
+    for(size_t i=1; i < lambdas.size(); i++) {
+      sig += points[i].y * lambdas[i];
+    }
+
+    return sig;
+  }
 
 
-  return pairing_agg == pairing_sum;
+  /**********************************************************************
+   * Helper Functions for Signature creation and Verification
+   **********************************************************************/
+  
+  const mie::Vuint Bls::nbits(const mie::Vuint val){
+    if(val <= 1) return 1;
+    return nbits(val / 2) + 1;
+  }
+
+  Fp Bls::prependP(const mie::Vuint val, const mie::Vuint num_digits, unsigned long pre){
+    Fp result(val % Param::p);
+    return result += Fp(pre % Param::p) * mie::power(Fp(2), num_digits);
+  }
+
+  Ec1 Bls::mapHashOntoCurve(const char* msg_digest) {
+    Ec1 hashed_msg_point;
+    unsigned long count = 0; //32-bit field
+    bool squareRootExists = false;
+    const mie::Vuint xVuintSHA256(msg_digest);
+    const mie::Vuint xVuint = xVuintSHA256 >> 1;
+    const mie::Vuint numDigits = nbits(xVuint); 
+    Fp y;
+
+    while(!squareRootExists) {
+      Fp x = prependP(xVuint, numDigits, count); //what to do if doesn't work for any count?
+      Fp x3plusb = x * x * x + CURVE_B;
+      squareRootExists = Fp::squareRoot(y, x3plusb);
+      if(xVuintSHA256 % 2 != 0) y = -y; //first bit as sign
+      if(squareRootExists){
+        const Ec1 result(x, y);
+        return result;
+      } else {
+        ++count;
+        if(count == ULONG_MAX) break;
+      }
+    }
+
+    // throw error if map fails
+    throw("This point should not have been reached \n");
+  }
+
+  // y = secret + r_0*x + r_1 * x^2 + r_2 * x^3 ... r_n * x^n
+  mie::Vuint Bls::calcPolynomial(std::vector<mie::Vuint>& r_vals, mie::Vuint secret, int x) {
+    Fp y(secret);
+    for(size_t i=1; i <= r_vals.size(); i++) {
+      Fp r_p = Fp(r_vals[i-1]);
+      Fp x_p = Fp(x);
+      y += r_p * mie::power(x_p, i);
+    }
+    return y.get();
+  }
+
+
+  /*******************************************
+   * Public Containers for Sig and PubKey
+   *******************************************/
+
+  Sig::Sig(const char* serializedSig) {
+    mie::Vuint xCoord(serializedSig);
+    bool y_neg = (xCoord % 2) == 1;
+
+    xCoord >>= 1;
+
+    Fp x = Fp(xCoord);
+    Fp y2 = x * x * x + CURVE_B;
+    Fp y;
+
+    Fp::squareRoot(y, y2);
+
+    if(y_neg && y.get() % 2 != 1) {
+      y = -y;
+    }
+
+    ec1 = Ec1(x, y);
+
+    // check that normalization is the right approach here
+    ec1.normalize();
+  }
+
+  Sig::Sig(string serializedSig) : Sig::Sig(serializedSig.c_str()) {};
+
+  Sig::Sig(Ec1 sig) {
+    ec1 = sig;
+
+    // check that normalization is the right approach here
+    ec1.normalize();
+  }
+
+  string Sig::toString() {
+    mie::Vuint y_coord(ec1.p[1].toString(10));
+    mie::Vuint x_coord(ec1.p[0].toString(10));
+
+    x_coord <<= 1;
+
+    if(y_coord % 2 == 1) {
+      x_coord += 1; // add flag to indicate negative
+    }
+
+    return x_coord.toString(10);
+  }
+
+  PubKey::PubKey(const char* serializedPubKey) {
+    // string pubkeyStr = string(serializedPubKey);
+    char* token = std::strtok((char*)string(serializedPubKey).c_str(), ".");
+
+    vector<string> components;
+    while (token != NULL) {
+      components.push_back(string(token));
+      token = std::strtok(NULL, ".");
+    }
+
+    assert(components.size() == 2);
+
+    Fp x1 = Fp(components[0]);
+    Fp y1 = Fp(components[1]);
+    Fp2 x = Fp2(x1, y1);
+
+    Fp2 y2 = x * x * x + CURVE_B;
+    Fp2 y;
+    // Fp2::squareRoot(y, y2);
+
+    // TODO: figure out how to compute y
+
+    // if(y_neg && y.get() % 2 != 1) {
+    //   y = -y;
+    // }
+  }
+
+  PubKey::PubKey(Ec2 pk) {
+    ec2 = pk;
+  }
+
+  // TODO: add sign
+  string PubKey::toString() {
+    Fp* x = ec2.p[0].get();
+    std::stringstream s;
+    s << x[0] << "." << x[1];
+    return s.str();
+  }
+
+  Ec2 PubKey::toEc2() {
+    return ec2;
+  }
 }
 
-/* Function: verify_threshold_sig
- * @param {char*} msg
- * @param {char*} sig
- * @return {bool} check that threshold signature is valid
- */
-bool Bls::verify_threshold_sig(const char* msg) {
-  // TODO, implement
-  return true;
-}
+#endif
