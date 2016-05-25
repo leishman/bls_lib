@@ -10,7 +10,7 @@ INCLUDES= -I../include -I../../xbyak -I../../ate-pairing/include
 DEPS= ../src/sha256.o ../src/bls.o
 
 all: ./bin/bench
-	make clean # force recompile
+	make clean # force recompile TODO: change this it's really ineffecient
 	make ./bin/bench
 	make ./bin/test
 
