@@ -1,13 +1,19 @@
-# BLS Signature Library
-### Authors: PengHui How, Alexander Leishman
+# Stanford BLS Signature Library
+### Author: Alexander Leishman
+
+### Contributors:
+- PengHui How
+
+# WARNING: IN DEVELOPMENT! DO NOT USE IN PRODUCTION!!!!!
+
+## Features
+- BLS signature generation and validation
+- Threshold signature API
 
 ## TODO
 - Distributed Key Generation
-- Again look at data types here
 - Threshold Signatures
 - Blind Signatures
-- Aggregate signatures
-- Signing Function
 
 ## Build
 - This project must sit in the same directory as both [ate-pairing](https://github.com/herumi/ate-pairing) and [xbyak](https://github.com/herumi/xbyak). Build both of these projects following the given instructions in the respective repo.
