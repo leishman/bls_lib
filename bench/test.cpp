@@ -263,8 +263,9 @@ TEST_CASE("Serializes and Deserializes PubKey Properly", "[bls]") {
 
   PubKey pubkey = my_bls.genPubKey(seed);
   string strpk = pubkey.toString();
+  cout << strpk << endl;
   PubKey newpk = PubKey(strpk.c_str());
-  CHECK(false);
+  CHECK(pubkey.ec2 == newpk.ec2);
 }
 
 // TODO: get threshold properly working

@@ -348,30 +348,27 @@ namespace bls {
   }
 
   PubKey::PubKey(const char* serializedPubKey) {
-    // string pubkeyStr = string(serializedPubKey);
-    char* token = std::strtok((char*)string(serializedPubKey).c_str(), ".");
+    char* newStr = strdup(serializedPubKey);
+    char* token = std::strtok(newStr, "_");
 
     vector<string> components;
+    cout << token << endl;
     while (token != NULL) {
       components.push_back(string(token));
-      token = std::strtok(NULL, ".");
+      token = std::strtok(NULL, "_");
     }
 
-    assert(components.size() == 2);
+    assert(components.size() == 4);
+    
 
     Fp x1 = Fp(components[0]);
     Fp y1 = Fp(components[1]);
     Fp2 x = Fp2(x1, y1);
 
-    Fp2 y2 = x * x * x + CURVE_B;
-    Fp2 y;
-    // Fp2::squareRoot(y, y2);
-
-    // TODO: figure out how to compute y
-
-    // if(y_neg && y.get() % 2 != 1) {
-    //   y = -y;
-    // }
+    Fp x2 = Fp(components[2]);
+    Fp y2 = Fp(components[3]);
+    Fp2 y = Fp2(x2, y2);
+    ec2 = Ec2(x, y);
   }
 
   PubKey::PubKey(Ec2 pk) {
@@ -379,11 +376,13 @@ namespace bls {
     ec2 = pk;
   }
 
-  // TODO: add sign
   string PubKey::toString() {
-    Fp* x = ec2.p[0].get();
+    Fp2 x = ec2.p[0];
+    Fp2 y = ec2.p[1];
+    Fp2 z = ec2.p[2];
+    cout << "projective z: " << z << endl;
     std::stringstream s;
-    s << x[0] << "." << x[1];
+    s << x.get()[0] << "_" << x.get()[1] << "_" << y.get()[0] << "_" << y.get()[1];
     return s.str();
   }
 
