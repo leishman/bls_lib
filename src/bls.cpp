@@ -28,9 +28,9 @@ namespace bls {
     g2 = g2p;
   }
 
-  PubKey Bls::genPubKey(const char *rand_seed) {
+  PubKey Bls::genPubKey(const char *seed) {
     // convert seed into Variable sized uint
-    mie::Vsint s_secret_key(rand_seed);
+    mie::Vsint s_secret_key(seed);
     
     // test that rand_seed is within proper limits
     if(s_secret_key <= 0) {
@@ -40,15 +40,17 @@ namespace bls {
     }
 
     mie::Vuint secret_key(s_secret_key.toString());
-
-    // Multiply generator by pk
-    Ec2 public_key_point = g2 * secret_key;
-
-    return PubKey(public_key_point);
+    return genPubKey(secret_key);
   }
 
-  PubKey Bls::genPubKey(const string& seed) {
+  PubKey Bls::genPubKey(const std::string& seed) {
     return genPubKey(seed.c_str());
+  }
+
+  PubKey Bls::genPubKey(mie::Vuint secret_key) {
+    // Multiply generator by pk
+    Ec2 public_key_point = g2 * secret_key;
+    return PubKey(public_key_point);
   }
 
   Sig Bls::aggregateSigs(const std::vector<Sig>& sigs) {
@@ -94,16 +96,17 @@ namespace bls {
     return signMsg(msg.c_str(), secret_key, pubkey);
   }
 
-  bool Bls::verifyAggSig(std::vector<const char*> &messages, std::vector<PubKey> &pubkeys, Sig const &sig) {
+  bool Bls::verifyAggSig(const std::vector<const char*> &messages, const std::vector<PubKey> &pubkeys, const Sig &sig, bool delay_exp) {
     // check that same number of messages and pubkeys
     if(messages.size() != pubkeys.size()) {
+      cerr << "SIZES NOT EQUAL" << endl;
       return false;
     }
 
     // calculate initial pairing
     Fp12 pairing_prod;
     Ec1 hashed_msg_point = hashMsgWithPubkey(messages[0], pubkeys[0].ec2);
-    opt_atePairing(pairing_prod, pubkeys[0].ec2, hashed_msg_point);
+    opt_atePairing(pairing_prod, pubkeys[0].ec2, hashed_msg_point, !delay_exp);
 
     // Set for checking that all messages are unique
     std::vector<Ec1> hashed_msgs;
@@ -114,8 +117,12 @@ namespace bls {
       Ec1 hashed_msg_point = hashMsgWithPubkey(messages[i], pubkeys[i].ec2);
       Ec2 pubkey = pubkeys[i].ec2;
       hashed_msgs.push_back(hashed_msg_point);
-      opt_atePairing(pairing_i, pubkey, hashed_msg_point);
+      opt_atePairing(pairing_i, pubkey, hashed_msg_point, !delay_exp);
       pairing_prod *= pairing_i;
+    }
+
+    if(delay_exp) {
+      pairing_prod.final_exp();
     }
 
     // calculate pairing with agg signature
@@ -155,6 +162,7 @@ namespace bls {
       sprintf(buf+(i*2)+2, "%02x", digest[i]);
     }
 
+    //cout << buf << endl;
     // map hash onto curve
     return mapHashOntoCurve(buf);
   } 
@@ -239,7 +247,6 @@ namespace bls {
     return sig;
   }
 
-
   /**********************************************************************
    * Helper Functions for Signature creation and Verification
    **********************************************************************/
@@ -292,7 +299,6 @@ namespace bls {
     return y.get();
   }
 
-
   /*******************************************
    * Public Containers for Sig and PubKey
    *******************************************/
@@ -324,7 +330,7 @@ namespace bls {
   Sig::Sig(Ec1 sig) {
     ec1 = sig;
 
-    // check that normalization is the right approach here
+    //TODO: check that normalization is the right approach here
     ec1.normalize();
   }
 
@@ -369,6 +375,7 @@ namespace bls {
   }
 
   PubKey::PubKey(Ec2 pk) {
+    pk.normalize();
     ec2 = pk;
   }
 

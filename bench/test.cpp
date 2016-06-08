@@ -61,8 +61,8 @@ TEST_CASE("Valid individual signatures are created", "[bls]") {
   // Bls my_bls = Bls();
 
 
-
 }
+
 
 TEST_CASE("Valid aggregate signatures are created", "[bls]") {
   Bls my_bls = Bls();
@@ -248,8 +248,10 @@ TEST_CASE("Serializes and Deserializes Signature Properly", "[bls]") {
 
     // CHECK(my_sig.toString() == my_sig_ec1.p[0].toString(10));
 
+    cout <<  seed << endl;
     Sig my_deserialized_sig = Sig(my_sig.toString());
 
+    my_deserialized_sig.ec1.normalize();
     CHECK(my_deserialized_sig.ec1 == my_sig_ec1);
   }
 }
@@ -321,3 +323,173 @@ TEST_CASE("Threshold KeyGen", "[bls]") {
   CHECK(my_bls.verifySig(pubkey, msg, combined_sig));
 }
 
+#define BENCHMARK(CODE, ITERATION_COUNT) {\
+  struct timeval timeStart, timeEnd;                  \
+  gettimeofday(&timeStart, NULL);        \
+  for(int yy=0; yy < ITERATION_COUNT; yy++) { (CODE); }     \
+  gettimeofday(&timeEnd, NULL);          \
+  (((timeEnd.tv_sec - timeStart.tv_sec) * 1000000 + timeEnd.tv_usec - timeStart.tv_usec) / ITERATION_COUNT); }\
+
+#define BENCHMARK_BEGIN(ITERATION_COUNT) \
+  struct timeval timeStart, timeEnd;                  \
+  gettimeofday(&timeStart, NULL);        \
+  for(int yy=0; yy < ITERATION_COUNT; yy++) { 
+
+
+#define BENCHMARK_END(ITERATION_COUNT) \
+  } \
+  gettimeofday(&timeEnd, NULL);          \
+  int bench_time = (((timeEnd.tv_sec - timeStart.tv_sec) * 1000000 + timeEnd.tv_usec - timeStart.tv_usec) / ITERATION_COUNT);
+
+#define TIMES(CODE, COUNT) for(size_t zzz=0; zzz < COUNT; zzz++) { (CODE); }
+
+// inspired by http://stackoverflow.com/a/440240/2302781
+std::string gen_random_str(const int len) {
+  std::string s;
+  static const char alphanum[] =
+    "0123456789"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+    "abcdefghijklmnopqrstuvwxyz";
+
+  for (int i = 0; i < len; ++i) {
+    s += alphanum[rand() % (sizeof(alphanum) - 1)];
+  }
+  return s;
+}
+
+TEST_CASE("Benchmark aggregate signatures", "[bench]") {
+  srand(time(NULL));
+  // TODO increase size later
+  size_t iteration_count = 10; // 100
+  size_t max_n = 150; // max amount of signatures
+
+  Bls my_bls = Bls();
+  std::vector<const char*> msgs;
+  std::vector<Sig> sigs;
+  std::vector<PubKey> pubkeys;
+  std::vector<mie::Vuint> seeds;
+
+  for(size_t i=0; i < max_n; i++) {
+    // generate random msg
+    std::string *msg = new std::string(gen_random_str(55));
+    msgs.push_back(msg->c_str());
+    //cout << msg->c_str() << endl;
+
+    // generate "random" seed
+    mie::Vuint seed(rand());
+    seeds.push_back(seed);
+    //cout << seed << endl;
+
+    PubKey pubkey = my_bls.genPubKey(seed);
+
+    // generate corresponding pubkey
+    pubkeys.push_back(pubkey);
+
+    // sign msg and run check
+    Sig sig = my_bls.signMsg(msg->c_str(), seed, pubkey);
+    CHECK(my_bls.verifySig(pubkey, msg->c_str(), sig));
+    sigs.push_back(sig);
+  }
+
+  //////////////////
+  // test basic BLS signature
+  // ////////////////
+  cout << "Basic BLS Benchmark" << endl;
+  cout << "SIG COUNT       TIME" << endl;
+  for(size_t i=1; i < max_n; i++) {
+    cout << i << "         ";
+    int out = (BENCHMARK(
+       { for(size_t j=0; j < i; j++) { my_bls.verifySig(pubkeys[j], msgs[j], sigs[j]); } },
+       iteration_count
+    ));
+    cout << out << endl;
+  }
+
+
+  ////////////////
+  // test aggregate BLS signature verification WITHOUT the delayed exponentiation
+  ///////////////
+  cout << endl << endl << endl;
+  cout << "Basic BLS Benchmark" << endl;
+  cout << "SIG COUNT       TIME" << endl;
+  for(size_t i=0; i < max_n; i++) {
+    cout << i + 1 << "      ";
+    std::vector<const char*> msgs_test(&msgs[0], &msgs[i+1]);
+    std::vector<PubKey> pubkeys_test(&pubkeys[0], &pubkeys[i+1]);
+    std::vector<Sig> sigs_test(&sigs[0], &sigs[i+1]);
+
+    Sig agg_sig = my_bls.aggregateSigs(sigs_test);
+ 
+    // check twice on purpose
+    CHECK(my_bls.verifyAggSig(msgs_test, pubkeys_test, agg_sig, false));
+    CHECK(my_bls.verifyAggSig(msgs_test, pubkeys_test, agg_sig, false));
+
+    bool valid = false;
+    int out = (BENCHMARK(
+            valid = my_bls.verifyAggSig(msgs_test, pubkeys_test, agg_sig, false),
+            iteration_count
+    ));
+    assert(valid);
+    cout << out << endl;
+  }
+
+
+  /////////////////
+  // test aggregate BLS signature verification WITH the delated exponentiation
+  ///////////////
+  cout << endl << endl << endl;
+  cout << "Delayed Exponentiation Benchmark" << endl;
+  cout << "SIG COUNT       TIME" << endl;
+  for(size_t i=0; i < max_n; i++) {
+    cout << i + 1 << "      ";
+    std::vector<const char*> msgs_test(&msgs[0], &msgs[i+1]);
+    std::vector<PubKey> pubkeys_test(&pubkeys[0], &pubkeys[i+1]);
+    std::vector<Sig> sigs_test(&sigs[0], &sigs[i+1]);
+
+    // TODO: verification calls normalize() and mutates Ec2
+    Sig agg_sig = my_bls.aggregateSigs(sigs_test);
+ 
+    // check twice on purpose
+    CHECK(my_bls.verifyAggSig(msgs_test, pubkeys_test, agg_sig));
+    CHECK(my_bls.verifyAggSig(msgs_test, pubkeys_test, agg_sig));
+
+    bool valid = false;
+    int out = (BENCHMARK(
+            valid = my_bls.verifyAggSig(msgs_test, pubkeys_test, agg_sig),
+            iteration_count
+    ));
+    assert(valid);
+    cout << out << endl;
+  }
+}
+
+TEST_CASE("benchmark hashing onto curve", "[bench] [bench_hash]") {
+  size_t iteration_count = 3000;
+
+  Bls my_bls = Bls();
+  std::string seed = "123123123123";
+  PubKey pubkey = my_bls.genPubKey(seed);
+
+  cout << "Testing total hash function" << endl << endl;
+  cout << "SIZE OF MSG (bytes)\t\tTIME" << endl;
+
+  for(size_t i=1; i < 2; i++) {
+   cout << i << "\t\t";
+   const char* msg = gen_random_str(i * 100).c_str();
+   int out = (BENCHMARK(
+      my_bls.hashMsgWithPubkey(msg, pubkey.ec2),
+      iteration_count
+    ));
+   cout << out << endl;
+  }
+
+  cout << "Testing mapping onto curve" << endl;
+  cout << "TIME:\t";
+
+   char *msg = "0x02f6224f74102aa26e92a111a5f2ddfd92eb55bcd2a8718220d5e4778231c000";
+   int out = (BENCHMARK(
+      my_bls.mapHashOntoCurve(msg),
+      iteration_count
+    ));
+   cout << out << "  microseconds" << endl;
+}

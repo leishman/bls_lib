@@ -102,6 +102,7 @@ namespace bls {
      * @return {PubKey}  public key point
      * public_key = g2 ^ secret_key
      */
+    PubKey genPubKey(mie::Vuint secret_key);
     PubKey genPubKey(const char *rand_seed);
     PubKey genPubKey(const string& seed);
 
@@ -149,7 +150,7 @@ namespace bls {
      * @param {vector<char*>*} Vector containing messages used in aggregate signature
      * @param {Ec1 sig} Point in G1 representing aggregate signature
      */
-    bool verifyAggSig(std::vector<const char*> &messages, std::vector<PubKey> &pubkeys, const Sig &sig);
+    bool verifyAggSig(const std::vector<const char*> &messages, const std::vector<PubKey> &pubkeys, const Sig &sig, bool delay_exp=true);
 
     /* Function: verify_threshold_sig
     * @param {char*} msg
@@ -184,6 +185,7 @@ namespace bls {
      */
     Sig combineThresholdSigs(const std::vector<thresholdSigPoint>& sigs, size_t t);
 
+    Ec1 mapHashOntoCurve(const char* hashed_message);
 
     private:
 
@@ -215,7 +217,6 @@ namespace bls {
      * @param {char*} msg_digest should take the form of 0x.....
      * @return {Ec1} point in G_1
      */
-    Ec1 mapHashOntoCurve(const char* hashed_message);
 
     /*
      * Function: calcPolynomial, Calculate y value of given x value and set of polynomial coefficients
