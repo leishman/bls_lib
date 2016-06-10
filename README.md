@@ -88,7 +88,7 @@
 - PubKey - Public Key (generated from seed)
 
 ### Contributors:
-Author: Alexander Leishman
-Advisor: Dan Boneh
-Other Contributors: PengHui How
+- Author: Alexander Leishman
+- Advisor: Dan Boneh
+- Other Contributors: PengHui How
 
