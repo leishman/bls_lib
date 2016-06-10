@@ -63,7 +63,15 @@ namespace bls {
     return Sig(sig_product);
   }
 
-  bool Bls::verifySig(PubKey const &pubkey, const char* msg, Sig const &sig) {
+  bool Bls::verifySigSignAgnostic(PubKey const &pubkey, const char* msg, Sig const &sig) {
+    if(verifySig(pubkey, msg, sig)) return true;
+    // flip
+    Ec1 negEc1 = sig.ec1;
+    negEc1.p[1] = -negEc1.p[1];
+    return verifySig(pubkey, msg, negEc1);
+  }
+
+  bool Bls::verifySig(PubKey const &pubkey, const char* msg, Ec1 sigEc1) {
     Fp12 pairing_1; // e(g, H(m)^sk)
     Fp12 pairing_2; // e(g^sk, H(m))
 
@@ -74,12 +82,16 @@ namespace bls {
     // e(g, H(m)^alpha) == e(g^alpha (pubkey), H(m)) 
 
     // ~500 us
-    opt_atePairing(pairing_1, g2, sig.ec1);
+    opt_atePairing(pairing_1, g2, sigEc1);
 
     // ~500 us
     opt_atePairing(pairing_2, pubkey.ec2, hashed_msg_point);
 
     return pairing_1 == pairing_2;
+  }
+
+  bool Bls::verifySig(PubKey const &pubkey, const char* msg, Sig const &sig) {
+    return verifySig(pubkey, msg, sig.ec1);
   }
 
   Sig Bls::signMsg(const char *msg, const char *secret_key_str, const PubKey &pubkey) {
@@ -162,7 +174,6 @@ namespace bls {
       sprintf(buf+(i*2)+2, "%02x", digest[i]);
     }
 
-    //cout << buf << endl;
     // map hash onto curve
     return mapHashOntoCurve(buf);
   } 
@@ -206,22 +217,22 @@ namespace bls {
         l_j *= (Fp(0) - sigs[m].x) / (sigs[j].x - sigs[m].x);
       }
 
-      // cout << "labmbda: " << l_j << endl;
+      // push lambda into vector
       lambdas.push_back(l_j);
     }
 
+    // exponentiate each signature point H(pk||m)^y_i by corresponding lambda_i
     Ec1 sig = sigs[0].y.ec1 * lambdas[0].get();
-    // cout << "temp sig: " << sig << endl;
-
     for(size_t i=1; i < lambdas.size(); i++) {
       sig += sigs[i].y.ec1 * lambdas[i].get();
-      // cout << "temp sig: " << sig << endl;
     }
 
     return Sig(sig);
   }
 
   // Test to see that math checks out
+  // NOTE: this is for recovering a shamir secret to test logic for lagrange interopolation
+  // The logic is duplicated from combineThresholdSigs()
   Fp Bls::recoverSecret(const std::vector<shamirPoint>& points, size_t t) {
     // calculate lambdas
     std::vector<Fp> lambdas;
@@ -238,8 +249,8 @@ namespace bls {
       lambdas.push_back(l_j);
     }
 
+    // sum l_i * y_i
     Fp sig = points[0].y * lambdas[0];
-
     for(size_t i=1; i < lambdas.size(); i++) {
       sig += points[i].y * lambdas[i];
     }
@@ -305,19 +316,12 @@ namespace bls {
 
   Sig::Sig(const char* serializedSig) {
     mie::Vuint xCoord(serializedSig);
-    bool y_neg = (xCoord % 2) == 1;
-
-    xCoord >>= 1;
 
     Fp x = Fp(xCoord);
     Fp y2 = x * x * x + CURVE_B;
     Fp y;
 
     Fp::squareRoot(y, y2);
-
-    if(y_neg && y.get() % 2 != 1) {
-      y = -y;
-    }
 
     ec1 = Ec1(x, y);
 
@@ -330,20 +334,12 @@ namespace bls {
   Sig::Sig(Ec1 sig) {
     ec1 = sig;
 
-    //TODO: check that normalization is the right approach here
+    //check that normalization is the right approach here
     ec1.normalize();
   }
 
   string Sig::toString() {
-    mie::Vuint y_coord(ec1.p[1].toString(10));
     mie::Vuint x_coord(ec1.p[0].toString(10));
-
-    x_coord <<= 1;
-
-    if(y_coord % 2 == 1) {
-      x_coord += 1; // add flag to indicate negative
-    }
-
     return x_coord.toString(10);
   }
 
@@ -352,7 +348,6 @@ namespace bls {
     char* token = std::strtok(newStr, "_");
 
     vector<string> components;
-    cout << token << endl;
     while (token != NULL) {
       components.push_back(string(token));
       token = std::strtok(NULL, "_");
@@ -380,7 +375,6 @@ namespace bls {
     Fp2 x = ec2.p[0];
     Fp2 y = ec2.p[1];
     Fp2 z = ec2.p[2];
-    cout << "projective z: " << z << endl;
     std::stringstream s;
     s << x.get()[0] << "_" << x.get()[1] << "_" << y.get()[0] << "_" << y.get()[1];
     return s.str();
