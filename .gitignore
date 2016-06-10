@@ -1,5 +1,6 @@
 .gdb_history
 *.o
 *.a
+*.swp
 /bench/bench
 /src/bls
