@@ -1,30 +1,11 @@
 # Stanford BLS Signature Library
-### Author: Alexander Leishman
-
-### Contributors:
-- PengHui How
 
 # WARNING: IN DEVELOPMENT! DO NOT USE IN PRODUCTION!!!!!
 
 ## Features
-- BLS signature generation and validation
-- Threshold signature API
-
-## TODO
-- Distributed Key Generation
-- Threshold Signatures
-- Blind Signatures
-
-## Build
-- This project must sit in the same directory as both [ate-pairing](https://github.com/herumi/ate-pairing) and [xbyak](https://github.com/herumi/xbyak). Build both of these projects following the given instructions in the respective repo.
-- Run `make` in `/src` to compile the object files
-- To run the benchmark run `make` in `/bench` which will compile, build and save the executable in `/bench/bin`
-
-
-## Classes
-- Bls - Create instance of this class to perform BLS sign/verify functions
-- Sig - Signature (point in Ec1)
-- PubKey - Public Key (generated from seed)
+- Invididual BLS signature generation and validation
+- Aggregate BLS signature generation and validation
+- Threshold BLS signature API (stil in progress)
 
 ## Usage
 ### Individual Signatures
@@ -87,4 +68,27 @@
   // Check that the signature is valid
   bool agg_sig_valid = my_bls.verifyAggSig(msgs, pubkeys, agg_sig);
 ```
+
+
+
+## TODO
+- Distributed Key Generation
+- Threshold Signatures
+- Blind Signatures
+
+## Build
+- This project must sit in the same directory as both [ate-pairing](https://github.com/herumi/ate-pairing) and [xbyak](https://github.com/herumi/xbyak). Build both of these projects following the given instructions in the respective repo.
+- Run `make` in `/src` to compile the object files
+- To run the benchmark run `make` in `/bench` which will compile, build and save the executable in `/bench/bin`
+
+
+## Classes
+- Bls - Create instance of this class to perform BLS sign/verify functions
+- Sig - Signature (point in Ec1)
+- PubKey - Public Key (generated from seed)
+
+### Author: Alexander Leishman
+
+### Contributors:
+- PengHui How
 
