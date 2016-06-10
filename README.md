@@ -87,9 +87,8 @@
 - Sig - Signature (point in Ec1)
 - PubKey - Public Key (generated from seed)
 
-### Author: Alexander Leishman
-### Advisor: Dan Boneh
-
 ### Contributors:
-- PengHui How
+Author: Alexander Leishman
+Advisor: Dan Boneh
+Other Contributors: PengHui How
 
