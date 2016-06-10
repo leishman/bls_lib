@@ -8,10 +8,6 @@
 
 using namespace bls;
 
-TEST_CASE("Message hashes onto curve", "[bls]") {
-
-}
-
 TEST_CASE("Key generation works properly", "[bls]") {
   // pd is 0
 
@@ -49,20 +45,6 @@ TEST_CASE("Key generation works properly", "[bls]") {
   CHECK(pubkey.isValid());
   // pk is just right
 }
-
-
-// Empty String?, null, invalid types, ... think about this one
-// TEST_CASE("Refuses to sign invalid messages") {
-
-// }
-
-
-TEST_CASE("Valid individual signatures are created", "[bls]") {
-  // Bls my_bls = Bls();
-
-
-}
-
 
 TEST_CASE("Valid aggregate signatures are created", "[bls]") {
   Bls my_bls = Bls();
@@ -248,11 +230,15 @@ TEST_CASE("Serializes and Deserializes Signature Properly", "[bls]") {
 
     // CHECK(my_sig.toString() == my_sig_ec1.p[0].toString(10));
 
-    cout <<  seed << endl;
     Sig my_deserialized_sig = Sig(my_sig.toString());
 
-    my_deserialized_sig.ec1.normalize();
-    CHECK(my_deserialized_sig.ec1 == my_sig_ec1);
+
+    // my_deserialized_sig.ec1.normalize();
+    // bool valid_serialization = (my_deserialized_sig.ec1 == my_sig_ec1) || (my_deserialized_sig.ec1 == -my_sig_ec1);
+
+    CHECK(my_deserialized_sig.ec1.p[0] == my_sig_ec1.p[0]);
+    bool valid_y = (my_deserialized_sig.ec1.p[1] == my_sig_ec1.p[1]) || (-my_deserialized_sig.ec1.p[1] == my_sig_ec1.p[1]);
+    CHECK(valid_y);
   }
 }
 
@@ -278,19 +264,23 @@ TEST_CASE("Threshold KeyGen", "[bls]") {
 
   PubKey pubkey = my_bls.genPubKey(secret);
 
-  size_t t = 2;
+  size_t t = 3;
   my_bls.genThreshKeys(secret, t, 7, points);
 
   std::vector<thresholdSigPoint> sig_points;
   std::vector<shamirPoint> shamir_points;
 
   for(uint i=0; i < t; i++) {
+    cout << points[i].y << endl;
     Sig s = my_bls.signMsg(msg, points[i].y.get(), pubkey);
     Fp x = points[i].x;
+    // cout << x << endl;
     sig_points.push_back({x, s});
 
     shamir_points.push_back({x, points[i].y});
   }
+
+  // test assumptions about algebraic properties
 
   const char* secret_1 = "4";
   PubKey pubkey_1 = my_bls.genPubKey(secret_1);
@@ -309,6 +299,8 @@ TEST_CASE("Threshold KeyGen", "[bls]") {
 
   Sig sig_3 = my_bls.signMsg(msg, secret_3, pubkey);
 
+  CHECK(sig_c.ec1 == sig_3.ec1);
+
 
   // for(uint i=0; i < t; i++) {
   //   Sig s = my_bls.signMsg(msg, points[i].y.get(), pubkey);
@@ -316,11 +308,13 @@ TEST_CASE("Threshold KeyGen", "[bls]") {
   //   cout << "x " << x << endl;
   //   sig_points.push_back({x, s});
   // }
+  cout << "actual sig: " << my_bls.signMsg(msg, secret, pubkey).ec1 << endl;
 
-  // cout << "recovered key: " << my_bls.recoverSecret(shamir_points, t) << endl;
+  CHECK(my_bls.recoverSecret(shamir_points, t) == 12345);
+
   Sig combined_sig = my_bls.combineThresholdSigs(sig_points, t);
-  // cout << combined_sig.ec1 << endl;
-  // cout << my_bls.signMsg(msg, secret, pubkey).ec1 << endl;
+  cout << "recovered sig: " << combined_sig.ec1 << endl;
+
   CHECK(my_bls.verifySig(pubkey, msg, combined_sig));
 }
 
@@ -392,9 +386,9 @@ TEST_CASE("Benchmark aggregate signatures", "[bench]") {
     sigs.push_back(sig);
   }
 
-  //////////////////
+  ///////////////////////////
   // test basic BLS signature
-  // ////////////////
+  //////////////////////////
   cout << "Basic BLS Benchmark" << endl;
   cout << "SIG COUNT       TIME" << endl;
   for(size_t i=1; i < max_n; i++) {

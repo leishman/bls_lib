@@ -127,7 +127,12 @@ namespace bls {
      * @param {const char*} msg  the message that was signed
      * @param {const Sig} sig  the point in G1 representing the signature
      */
-    bool verifySig(PubKey const &pubkey, const char* msg, Sig const &sig);
+    bool verifySig(PubKey const &pubkey, const char* msg, const Sig &sig);
+    bool verifySig(PubKey const &pubkey, const char* msg, const Ec1 sigEc1);
+
+    // try both signs of signature
+    bool verifySigSignAgnostic(PubKey const &pubkey, const char* msg, Sig const &sig);
+
 
     /* 
      * Function: signMsg
